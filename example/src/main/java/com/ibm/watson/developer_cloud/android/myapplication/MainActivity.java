@@ -83,6 +83,7 @@ public class MainActivity extends AppCompatActivity {
     translationService = initLanguageTranslationService();
     visualService = initVisualRecognitionService();
 
+    //setup screen elements
     targetLanguage = (RadioGroup) findViewById(R.id.target_language);
     input = (EditText) findViewById(R.id.input);
     mic = (ImageButton) findViewById(R.id.mic);
@@ -94,6 +95,7 @@ public class MainActivity extends AppCompatActivity {
     ageMaxText = (TextView) findViewById(R.id.visual_age_max);
     genderText = (TextView) findViewById(R.id.visual_gender);
 
+    //setup buttons for language selection
     targetLanguage.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(RadioGroup group, int checkedId) {
         switch (checkedId) {
@@ -110,6 +112,7 @@ public class MainActivity extends AppCompatActivity {
       }
     });
 
+    //setup listener for keyboard input
     input.addTextChangedListener(new EmptyTextWatcher() {
       @Override public void onEmpty(boolean empty) {
         if (empty) {
@@ -120,6 +123,7 @@ public class MainActivity extends AppCompatActivity {
       }
     });
 
+    //setup microphone listener
     mic.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View v) {
         mic.setEnabled(false);
@@ -127,8 +131,16 @@ public class MainActivity extends AppCompatActivity {
         new Thread(new Runnable() {
           @Override public void run() {
             try {
+              RecognizeOptions options = new RecognizeOptions.Builder()
+                  .continuous(true)
+                  .contentType(MicrophoneInputStream.CONTENT_TYPE)
+                  .model("en-US_BroadbandModel")
+                  .interimResults(true)
+                  .inactivityTimeout(2000)
+                  .build();
+
               speechService.recognizeUsingWebSocket(new MicrophoneInputStream(),
-                  getRecognizeOptions(), new MicrophoneRecognizeDelegate());
+                  options, new MicrophoneRecognizeDelegate());
             } catch (Exception e) {
               showError(e);
             }
@@ -137,6 +149,7 @@ public class MainActivity extends AppCompatActivity {
       }
     });
 
+    //setup translate button listener
     translate.setOnClickListener(new View.OnClickListener() {
 
       @Override public void onClick(View v) {
@@ -144,6 +157,7 @@ public class MainActivity extends AppCompatActivity {
       }
     });
 
+    //setup translate text listener
     translatedText.addTextChangedListener(new EmptyTextWatcher() {
       @Override public void onEmpty(boolean empty) {
         if (empty) {
@@ -154,69 +168,11 @@ public class MainActivity extends AppCompatActivity {
       }
     });
 
+    //setup play button for text to speech
     play.setEnabled(false);
-
     play.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View v) {
         new SynthesisTask().execute(translatedText.getText().toString());
-      }
-    });
-  }
-
-
-  private void showTranslation(final String translation) {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        translatedText.setText(translation);
-      }
-    });
-  }
-
-  private void showError(final Exception e) {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        Toast.makeText(MainActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
-        e.printStackTrace();
-      }
-    });
-  }
-
-  private void showMicText(final String text) {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        input.setText(text);
-      }
-    });
-  }
-
-  private void showAgeMin(final String ageMin) {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        ageMinText.setText(ageMin);
-      }
-    });
-  }
-
-  private void showAgeMax(final String ageMax) {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        ageMaxText.setText(ageMax);
-      }
-    });
-  }
-
-  private void showGender(final String gender) {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        genderText.setText(gender);
-      }
-    });
-  }
-
-  private void enableMicButton() {
-    runOnUiThread(new Runnable() {
-      @Override public void run() {
-        mic.setEnabled(true);
       }
     });
   }
@@ -246,40 +202,9 @@ public class MainActivity extends AppCompatActivity {
     return service;
   }
 
-
   private VisualRecognition initVisualRecognitionService() {
     return new VisualRecognition(VisualRecognition.VERSION_DATE_2016_05_20,
         getString(R.string.visual_recognition_api_key));
-  }
-
-  private RecognizeOptions getRecognizeOptions() {
-   return new RecognizeOptions.Builder()
-        .continuous(true)
-        .contentType(MicrophoneInputStream.CONTENT_TYPE)
-        .model("en-US_BroadbandModel")
-        .interimResults(true)
-        .inactivityTimeout(2000)
-        .build();
-  }
-
-  private abstract class EmptyTextWatcher implements TextWatcher {
-    private boolean isEmpty = true; // assumes text is initially empty
-
-    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-      if (s.length() == 0) {
-        isEmpty = true;
-        onEmpty(true);
-      } else if (isEmpty) {
-        isEmpty = false;
-        onEmpty(false);
-      }
-    }
-
-    @Override public void afterTextChanged(Editable s) {}
-
-    public abstract void onEmpty(boolean empty);
   }
 
   private class MicrophoneRecognizeDelegate implements RecognizeCallback {
@@ -353,6 +278,87 @@ public class MainActivity extends AppCompatActivity {
     if (requestCode == GalleryHelper.PICK_IMAGE_REQUEST) {
       loadedImage.setImageBitmap(galleryHelper.getBitmap(resultCode, data));
     }
+  }
+
+
+  //------------------UI methods--------------------------------------
+
+  private void showTranslation(final String translation) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        translatedText.setText(translation);
+      }
+    });
+  }
+
+  private void showError(final Exception e) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        Toast.makeText(MainActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
+        e.printStackTrace();
+      }
+    });
+  }
+
+  private void showMicText(final String text) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        input.setText(text);
+      }
+    });
+  }
+
+  private void showAgeMin(final String ageMin) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        ageMinText.setText(ageMin);
+      }
+    });
+  }
+
+  private void showAgeMax(final String ageMax) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        ageMaxText.setText(ageMax);
+      }
+    });
+  }
+
+  private void showGender(final String gender) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        genderText.setText(gender);
+      }
+    });
+  }
+
+  private void enableMicButton() {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        mic.setEnabled(true);
+      }
+    });
+  }
+
+  //Watch for keyboard input
+  private abstract class EmptyTextWatcher implements TextWatcher {
+    private boolean isEmpty = true; // assumes text is initially empty
+
+    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+      if (s.length() == 0) {
+        isEmpty = true;
+        onEmpty(true);
+      } else if (isEmpty) {
+        isEmpty = false;
+        onEmpty(false);
+      }
+    }
+
+    @Override public void afterTextChanged(Editable s) {}
+
+    public abstract void onEmpty(boolean empty);
   }
 
 }

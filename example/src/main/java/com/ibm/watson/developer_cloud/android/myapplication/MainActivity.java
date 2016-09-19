@@ -17,7 +17,6 @@
 package com.ibm.watson.developer_cloud.android.myapplication;
 
 import android.content.Intent;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.text.Editable;
@@ -46,6 +45,13 @@ import com.ibm.watson.developer_cloud.visual_recognition.v3.VisualRecognition;
 import com.ibm.watson.developer_cloud.visual_recognition.v3.model.DetectedFaces;
 import com.ibm.watson.developer_cloud.visual_recognition.v3.model.Face;
 import com.ibm.watson.developer_cloud.visual_recognition.v3.model.VisualRecognitionOptions;
+import java.io.InputStream;
+import rx.Observable;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.functions.Action1;
+import rx.functions.Func0;
+import rx.functions.Func1;
+import rx.schedulers.Schedulers;
 
 public class MainActivity extends AppCompatActivity {
   private final String TAG = "MainActivity";
@@ -151,9 +157,15 @@ public class MainActivity extends AppCompatActivity {
 
     //setup translate button listener
     translate.setOnClickListener(new View.OnClickListener() {
-
       @Override public void onClick(View v) {
-        new TranslationTask().execute(input.getText().toString());
+        getTranslation(input.getText().toString())
+            .subscribeOn(Schedulers.newThread())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(new Action1<String>() {
+              @Override public void call(String translatedText) {
+                showTranslation(translatedText);
+              }
+            });
       }
     });
 
@@ -172,7 +184,13 @@ public class MainActivity extends AppCompatActivity {
     play.setEnabled(false);
     play.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View v) {
-        new SynthesisTask().execute(translatedText.getText().toString());
+        getTextToSpeech(translatedText.getText().toString())
+            .subscribeOn(AndroidSchedulers.mainThread())
+            .subscribe(new Action1<InputStream>() {
+              @Override public void call(InputStream inputStream) {
+                player.playStream(inputStream);
+              }
+            });
       }
     });
   }
@@ -232,38 +250,72 @@ public class MainActivity extends AppCompatActivity {
     }
   }
 
-  private class TranslationTask extends AsyncTask<String, Void, String> {
-    @Override protected String doInBackground(String... params) {
-      showTranslation(translationService.translate(params[0], Language.ENGLISH, selectedTargetLanguage).execute().getFirstTranslation());
-      return "Did translate";
-    }
+  //private class TranslationTask extends AsyncTask<String, Void, String> {
+  //  @Override protected String doInBackground(String... params) {
+  //    showTranslation(translationService.translate(params[0], Language.ENGLISH, selectedTargetLanguage).execute().getFirstTranslation());
+  //    return "Did translate";
+  //  }
+  //}
+
+  private Observable<String> getTranslation(String textToTranslate) {
+    return Observable
+        .just(translationService.translate(textToTranslate, Language.ENGLISH, selectedTargetLanguage).execute().getFirstTranslation())
+        .subscribeOn(Schedulers.newThread());
   }
 
-  private class SynthesisTask extends AsyncTask<String, Void, String> {
-    @Override protected String doInBackground(String... params) {
-      player.playStream(textService.synthesize(params[0], Voice.EN_LISA).execute());
-      return "Did syntesize";
-    }
+  //private class SynthesisTask extends AsyncTask<String, Void, String> {
+  //  @Override protected String doInBackground(String... params) {
+  //    player.playStream(textService.synthesize(params[0], Voice.EN_LISA).execute());
+  //    return "Did syntesize";
+  //  }
+  //}
+
+  private Observable<InputStream> getTextToSpeech(String text) {
+    return Observable
+        .just(textService.synthesize(text, Voice.EN_LISA).execute())
+        .subscribeOn(Schedulers.newThread());
   }
 
-  private class VisualTask extends AsyncTask<Integer, Void, String> {
-    @Override protected String doInBackground(Integer... integers) {
-        VisualRecognitionOptions options = new VisualRecognitionOptions.Builder()
-            .images(cameraHelper.getFile(integers[0]))
-            .build();
+  //private class VisualTask extends AsyncTask<Integer, Void, String> {
+  //  @Override protected String doInBackground(Integer... integers) {
+  //      VisualRecognitionOptions options = new VisualRecognitionOptions.Builder()
+  //          .images(cameraHelper.getFile(integers[0]))
+  //          .build();
+  //
+  //    DetectedFaces faces = visualService.detectFaces(options).execute();
+  //
+  //    if (!faces.getImages().get(0).getFaces().isEmpty()) {
+  //      Face face = faces.getImages().get(0).getFaces().get(0);
+  //      Face.Age age = faces.getImages().get(0).getFaces().get(0).getAge();
+  //      showAgeMin(Integer.toString(age.getMin()));
+  //      showAgeMax(Integer.toString(age.getMax()));
+  //      showGender(face.getGender().getGender());
+  //    }
+  //
+  //    return "Did visual";
+  //  }
+  //}
 
-      DetectedFaces faces = visualService.detectFaces(options).execute();
+  private Observable<Face> detectFace(int resultCode) {
+    final VisualRecognitionOptions options = new VisualRecognitionOptions.Builder()
+        .images(cameraHelper.getFile(resultCode))
+        .build();
 
-      if (!faces.getImages().get(0).getFaces().isEmpty()) {
-        Face face = faces.getImages().get(0).getFaces().get(0);
-        Face.Age age = faces.getImages().get(0).getFaces().get(0).getAge();
-        showAgeMin(Integer.toString(age.getMin()));
-        showAgeMax(Integer.toString(age.getMax()));
-        showGender(face.getGender().getGender());
+    return Observable.defer(new Func0<Observable<Face>>() {
+      @Override public Observable<Face> call() {
+        return Observable.just(visualService.detectFaces(options).execute())
+            .filter(new Func1<DetectedFaces, Boolean>() {
+              @Override public Boolean call(DetectedFaces faces) {
+                return !faces.getImages().get(0).getFaces().isEmpty();
+              }
+            })
+            .flatMap(new Func1<DetectedFaces, Observable<Face>>() {
+              @Override public Observable<Face> call(DetectedFaces faces) {
+                return Observable.just(faces.getImages().get(0).getFaces().get(0));
+              }
+            });
       }
-
-      return "Did visual";
-    }
+    });
   }
 
   @Override
@@ -272,7 +324,16 @@ public class MainActivity extends AppCompatActivity {
 
     if (requestCode == CameraHelper.REQUEST_IMAGE_CAPTURE) {
       loadedImage.setImageBitmap(cameraHelper.getBitmap(resultCode));
-      new VisualTask().execute(resultCode);
+      detectFace(resultCode)
+          .observeOn(Schedulers.io())
+          .subscribeOn(AndroidSchedulers.mainThread())
+          .subscribe(new Action1<Face>() {
+            @Override public void call(Face face) {
+              showAgeMin(face.getAge().getMin());
+              showAgeMax(face.getAge().getMax());
+              showGender(face.getGender().getGender());
+            }
+          });
     }
 
     if (requestCode == GalleryHelper.PICK_IMAGE_REQUEST) {
@@ -308,18 +369,18 @@ public class MainActivity extends AppCompatActivity {
     });
   }
 
-  private void showAgeMin(final String ageMin) {
+  private void showAgeMin(final int ageMin) {
     runOnUiThread(new Runnable() {
       @Override public void run() {
-        ageMinText.setText(ageMin);
+        ageMinText.setText(Integer.toString(ageMin));
       }
     });
   }
 
-  private void showAgeMax(final String ageMax) {
+  private void showAgeMax(final int ageMax) {
     runOnUiThread(new Runnable() {
       @Override public void run() {
-        ageMaxText.setText(ageMax);
+        ageMaxText.setText(Integer.toString(ageMax));
       }
     });
   }

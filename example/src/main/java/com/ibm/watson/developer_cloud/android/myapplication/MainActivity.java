@@ -36,12 +36,16 @@ import com.ibm.watson.developer_cloud.android.library.audio.MicrophoneInputStrea
 import com.ibm.watson.developer_cloud.android.library.audio.StreamPlayer;
 import com.ibm.watson.developer_cloud.language_translation.v2.LanguageTranslation;
 import com.ibm.watson.developer_cloud.language_translation.v2.model.Language;
-import com.ibm.watson.developer_cloud.speech_to_text.v1.RecognizeOptions;
 import com.ibm.watson.developer_cloud.speech_to_text.v1.SpeechToText;
+import com.ibm.watson.developer_cloud.speech_to_text.v1.model.RecognizeOptions;
 import com.ibm.watson.developer_cloud.speech_to_text.v1.model.SpeechResults;
-import com.ibm.watson.developer_cloud.speech_to_text.v1.websocket.RecognizeDelegate;
+import com.ibm.watson.developer_cloud.speech_to_text.v1.websocket.RecognizeCallback;
 import com.ibm.watson.developer_cloud.text_to_speech.v1.TextToSpeech;
 import com.ibm.watson.developer_cloud.text_to_speech.v1.model.Voice;
+import com.ibm.watson.developer_cloud.visual_recognition.v3.VisualRecognition;
+import com.ibm.watson.developer_cloud.visual_recognition.v3.model.DetectedFaces;
+import com.ibm.watson.developer_cloud.visual_recognition.v3.model.Face;
+import com.ibm.watson.developer_cloud.visual_recognition.v3.model.VisualRecognitionOptions;
 
 public class MainActivity extends AppCompatActivity {
   private final String TAG = "MainActivity";
@@ -52,13 +56,15 @@ public class MainActivity extends AppCompatActivity {
   private Button translate;
   private ImageButton play;
   private TextView translatedText;
-  private Button gallery;
-  private Button camera;
   private ImageView loadedImage;
+  private TextView ageMinText;
+  private TextView ageMaxText;
+  private TextView genderText;
 
   private SpeechToText speechService;
   private TextToSpeech textService;
   private LanguageTranslation translationService;
+  private VisualRecognition visualService;
   private Language selectedTargetLanguage = Language.SPANISH;
 
   private StreamPlayer player = new StreamPlayer();
@@ -75,6 +81,7 @@ public class MainActivity extends AppCompatActivity {
     speechService = initSpeechToTextService();
     textService = initTextToSpeechService();
     translationService = initLanguageTranslationService();
+    visualService = initVisualRecognitionService();
 
     targetLanguage = (RadioGroup) findViewById(R.id.target_language);
     input = (EditText) findViewById(R.id.input);
@@ -82,9 +89,10 @@ public class MainActivity extends AppCompatActivity {
     translate = (Button) findViewById(R.id.translate);
     play = (ImageButton) findViewById(R.id.play);
     translatedText = (TextView) findViewById(R.id.translated_text);
-    gallery = (Button) findViewById(R.id.gallery_button);
-    camera = (Button) findViewById(R.id.camera_button);
     loadedImage = (ImageView) findViewById(R.id.loaded_image);
+    ageMinText = (TextView) findViewById(R.id.visual_age_min);
+    ageMaxText = (TextView) findViewById(R.id.visual_age_max);
+    genderText = (TextView) findViewById(R.id.visual_gender);
 
     targetLanguage.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(RadioGroup group, int checkedId) {
@@ -119,7 +127,7 @@ public class MainActivity extends AppCompatActivity {
         new Thread(new Runnable() {
           @Override public void run() {
             try {
-              speechService.recognizeUsingWebSockets(new MicrophoneInputStream(),
+              speechService.recognizeUsingWebSocket(new MicrophoneInputStream(),
                   getRecognizeOptions(), new MicrophoneRecognizeDelegate());
             } catch (Exception e) {
               showError(e);
@@ -153,18 +161,6 @@ public class MainActivity extends AppCompatActivity {
         new SynthesisTask().execute(translatedText.getText().toString());
       }
     });
-
-    gallery.setOnClickListener(new View.OnClickListener() {
-      @Override public void onClick(View v) {
-        galleryHelper.dispatchGalleryIntent();
-      }
-    });
-
-    camera.setOnClickListener(new View.OnClickListener() {
-      @Override public void onClick(View v) {
-        cameraHelper.dispatchTakePictureIntent();
-      }
-    });
   }
 
 
@@ -189,6 +185,30 @@ public class MainActivity extends AppCompatActivity {
     runOnUiThread(new Runnable() {
       @Override public void run() {
         input.setText(text);
+      }
+    });
+  }
+
+  private void showAgeMin(final String ageMin) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        ageMinText.setText(ageMin);
+      }
+    });
+  }
+
+  private void showAgeMax(final String ageMax) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        ageMaxText.setText(ageMax);
+      }
+    });
+  }
+
+  private void showGender(final String gender) {
+    runOnUiThread(new Runnable() {
+      @Override public void run() {
+        genderText.setText(gender);
       }
     });
   }
@@ -226,14 +246,20 @@ public class MainActivity extends AppCompatActivity {
     return service;
   }
 
+
+  private VisualRecognition initVisualRecognitionService() {
+    return new VisualRecognition(VisualRecognition.VERSION_DATE_2016_05_20,
+        getString(R.string.visual_recognition_api_key));
+  }
+
   private RecognizeOptions getRecognizeOptions() {
-    RecognizeOptions options = new RecognizeOptions();
-    options.continuous(true);
-    options.contentType(MicrophoneInputStream.CONTENT_TYPE);
-    options.model("en-US_BroadbandModel");
-    options.interimResults(true);
-    options.inactivityTimeout(2000);
-    return options;
+   return new RecognizeOptions.Builder()
+        .continuous(true)
+        .contentType(MicrophoneInputStream.CONTENT_TYPE)
+        .model("en-US_BroadbandModel")
+        .interimResults(true)
+        .inactivityTimeout(2000)
+        .build();
   }
 
   private abstract class EmptyTextWatcher implements TextWatcher {
@@ -256,12 +282,16 @@ public class MainActivity extends AppCompatActivity {
     public abstract void onEmpty(boolean empty);
   }
 
-  private class MicrophoneRecognizeDelegate implements RecognizeDelegate {
-
-    @Override public void onMessage(SpeechResults speechResults) {
+  private class MicrophoneRecognizeDelegate implements RecognizeCallback {
+    @Override public void onTranscription(SpeechResults speechResults) {
       String text = speechResults.getResults().get(0).getAlternatives().get(0).getTranscript();
+      String takeASelfie = "take a selfie ";
+      if (text.equals(takeASelfie) && !input.getText().toString().equals(takeASelfie)) {
+        cameraHelper.dispatchTakePictureIntent();
+      }
       showMicText(text);
     }
+
 
     @Override public void onConnected() {
 
@@ -278,18 +308,36 @@ public class MainActivity extends AppCompatActivity {
   }
 
   private class TranslationTask extends AsyncTask<String, Void, String> {
-
     @Override protected String doInBackground(String... params) {
-      showTranslation(translationService.translate(params[0], Language.ENGLISH, selectedTargetLanguage).getFirstTranslation());
+      showTranslation(translationService.translate(params[0], Language.ENGLISH, selectedTargetLanguage).execute().getFirstTranslation());
       return "Did translate";
     }
   }
 
   private class SynthesisTask extends AsyncTask<String, Void, String> {
-
     @Override protected String doInBackground(String... params) {
-      player.playStream(textService.synthesize(params[0], Voice.EN_LISA));
+      player.playStream(textService.synthesize(params[0], Voice.EN_LISA).execute());
       return "Did syntesize";
+    }
+  }
+
+  private class VisualTask extends AsyncTask<Integer, Void, String> {
+    @Override protected String doInBackground(Integer... integers) {
+        VisualRecognitionOptions options = new VisualRecognitionOptions.Builder()
+            .images(cameraHelper.getFile(integers[0]))
+            .build();
+
+      DetectedFaces faces = visualService.detectFaces(options).execute();
+
+      if (!faces.getImages().get(0).getFaces().isEmpty()) {
+        Face face = faces.getImages().get(0).getFaces().get(0);
+        Face.Age age = faces.getImages().get(0).getFaces().get(0).getAge();
+        showAgeMin(Integer.toString(age.getMin()));
+        showAgeMax(Integer.toString(age.getMax()));
+        showGender(face.getGender().getGender());
+      }
+
+      return "Did visual";
     }
   }
 
@@ -299,6 +347,7 @@ public class MainActivity extends AppCompatActivity {
 
     if (requestCode == CameraHelper.REQUEST_IMAGE_CAPTURE) {
       loadedImage.setImageBitmap(cameraHelper.getBitmap(resultCode));
+      new VisualTask().execute(resultCode);
     }
 
     if (requestCode == GalleryHelper.PICK_IMAGE_REQUEST) {

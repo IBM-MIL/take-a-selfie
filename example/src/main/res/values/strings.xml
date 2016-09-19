@@ -9,4 +9,8 @@
   <string name="italian">Italian</string>
   <string name="microphone">Microphone</string>
   <string name="play">Play</string>
+  <string name="visual_age_default">0</string>
+  <string name="visual_age_min">Min Age:</string>
+  <string name="visual_age_max">Max Age</string>
+  <string name="visual_gender">Gender</string>
 </resources>
